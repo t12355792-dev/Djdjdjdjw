@@ -14,18 +14,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Серверы скачивания иногда отвечают 504, поэтому у каждой Java есть запасные источники.
+
       # 1) Java 8 — для компиляции мода под Forge 1.12.2
-      - name: Java 8 (toolchain)
-        uses: actions/setup-java@v4
+      - name: Java 8 (Temurin)
+        id: j8a
+        continue-on-error: true
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 8
+      - name: Java 8 (Zulu, запасной)
+        id: j8b
+        if: steps.j8a.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 8
+      - name: Java 8 (Corretto, запасной)
+        if: steps.j8a.outcome == 'failure' && steps.j8b.outcome == 'failure'
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: 8
 
       # 2) Java 21 — на ней запускается сам Gradle 9.5.0 (становится JAVA_HOME)
-      - name: Java 21 (Gradle)
-        uses: actions/setup-java@v4
+      - name: Java 21 (Temurin)
+        id: j21a
+        continue-on-error: true
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
+          java-version: 21
+      - name: Java 21 (Zulu, запасной)
+        if: steps.j21a.outcome == 'failure'
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
           java-version: 21
 
       # Gradle 9.5.0 скачиваем сами с повторами и запасными адресами
@@ -93,3 +119,4 @@ jobs:
           path: |
             proj/**/build/reports/**
           if-no-files-found: ignore
+
