@@ -54,25 +54,32 @@ jobs:
           distribution: zulu
           java-version: 21
 
-      # Gradle 9.5.0 скачиваем сами с повторами и запасными адресами
-      # (на сервере Gradle бывают сбои 504 — тогда пробуем ещё раз)
-      - name: Install Gradle 9.5.0
+      # Gradle скачиваем сами: сначала 9.5.0 с нескольких зеркал; если все недоступны —
+      # запасные версии 9.4.1 / 9.3.1 (проект с ними тоже собирается)
+      - name: Install Gradle
         run: |
           mkdir -p "$HOME/gradle-dist" && cd "$HOME/gradle-dist"
-          ok=0
-          for url in \
-            "https://services.gradle.org/distributions/gradle-9.5.0-bin.zip" \
-            "https://downloads.gradle.org/distributions/gradle-9.5.0-bin.zip" \
-            "https://downloads.gradle-dn.com/distributions/gradle-9.5.0-bin.zip"; do
-            for i in 1 2 3 4 5; do
-              echo "Попытка $i: $url"
-              if curl -fsSL --retry 3 --retry-all-errors --retry-delay 5 -o gradle.zip "$url"; then ok=1; break 2; fi
-              sleep 15
+          used=""
+          for V in 9.5.0 9.4.1 9.3.1; do
+            for url in \
+              "https://services.gradle.org/distributions/gradle-$V-bin.zip" \
+              "https://github.com/gradle/gradle-distributions/releases/download/v$V/gradle-$V-bin.zip" \
+              "https://mirrors.cloud.tencent.com/gradle/gradle-$V-bin.zip" \
+              "https://repo.huaweicloud.com/gradle/gradle-$V-bin.zip"; do
+              for i in 1 2; do
+                echo "[$V] попытка $i: $url"
+                rm -f gradle.zip
+                if curl -fsSL --connect-timeout 20 --max-time 300 -o gradle.zip "$url" && unzip -tq gradle.zip > /dev/null 2>&1; then
+                  used="$V"; break 3
+                fi
+                sleep 4
+              done
             done
           done
-          if [ "$ok" != "1" ]; then echo "Не удалось скачать Gradle"; exit 1; fi
+          if [ -z "$used" ]; then echo "Не удалось скачать Gradle ни с одного зеркала"; exit 1; fi
+          echo "Скачан Gradle $used"
           unzip -q gradle.zip
-          echo "$HOME/gradle-dist/gradle-9.5.0/bin" >> "$GITHUB_PATH"
+          echo "$HOME/gradle-dist/gradle-$used/bin" >> "$GITHUB_PATH"
 
       - name: Unzip project
         run: |
@@ -119,4 +126,3 @@ jobs:
           path: |
             proj/**/build/reports/**
           if-no-files-found: ignore
-
