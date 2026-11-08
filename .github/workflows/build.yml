@@ -1,0 +1,80 @@
+name: Build mod
+on:
+  workflow_dispatch:
+    inputs:
+      zip:
+        description: "Имя zip-файла проекта в корне репозитория"
+        required: true
+        default: "railgrip-forge-1.12.2.zip"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1) Java 8 — для компиляции мода под Forge 1.12.2
+      - name: Java 8 (toolchain)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 8
+
+      # 2) Java 21 — на ней запускается сам Gradle 9.5.0 (становится JAVA_HOME)
+      - name: Java 21 (Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Gradle 9.5.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.5.0
+
+      - name: Unzip project
+        run: |
+          ls -la
+          mkdir -p proj
+          unzip -oq "${{ github.event.inputs.zip }}" -d proj
+          find proj -maxdepth 3 -name "*.gradle" -o -maxdepth 3 -name "gradle.properties"
+
+      - name: Prepare project
+        run: |
+          DIR=$(dirname "$(find proj -name build.gradle | head -1)")
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+          cd "$DIR"
+          # плагин авто-поиска Java не нужен: Java 8 уже поставлена шагом выше
+          sed -i "/foojay-resolver-convention/d" settings.gradle
+          echo "---- settings.gradle ----"; cat settings.gradle
+          echo "---- gradle.properties ----"; cat gradle.properties
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "JAVA_HOME_8_X64=$JAVA_HOME_8_X64"
+          java -version
+
+      - name: Build
+        run: |
+          cd "$PROJECT_DIR"
+          gradle --version
+          gradle build --no-daemon --stacktrace \
+            -Dorg.gradle.java.installations.paths="$JAVA_HOME_8_X64" \
+            -Dorg.gradle.java.installations.auto-detect=false
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: mod-jar
+          path: |
+            proj/**/build/libs/*.jar
+            !proj/**/build/libs/*-dev.jar
+            !proj/**/build/libs/*-sources.jar
+
+      - name: Upload build reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            proj/**/build/reports/**
+          if-no-files-found: ignore
