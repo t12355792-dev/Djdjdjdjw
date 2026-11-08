@@ -28,10 +28,25 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Gradle 9.5.0
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 9.5.0
+      # Gradle 9.5.0 скачиваем сами с повторами и запасными адресами
+      # (на сервере Gradle бывают сбои 504 — тогда пробуем ещё раз)
+      - name: Install Gradle 9.5.0
+        run: |
+          mkdir -p "$HOME/gradle-dist" && cd "$HOME/gradle-dist"
+          ok=0
+          for url in \
+            "https://services.gradle.org/distributions/gradle-9.5.0-bin.zip" \
+            "https://downloads.gradle.org/distributions/gradle-9.5.0-bin.zip" \
+            "https://downloads.gradle-dn.com/distributions/gradle-9.5.0-bin.zip"; do
+            for i in 1 2 3 4 5; do
+              echo "Попытка $i: $url"
+              if curl -fsSL --retry 3 --retry-all-errors --retry-delay 5 -o gradle.zip "$url"; then ok=1; break 2; fi
+              sleep 15
+            done
+          done
+          if [ "$ok" != "1" ]; then echo "Не удалось скачать Gradle"; exit 1; fi
+          unzip -q gradle.zip
+          echo "$HOME/gradle-dist/gradle-9.5.0/bin" >> "$GITHUB_PATH"
 
       - name: Unzip project
         run: |
